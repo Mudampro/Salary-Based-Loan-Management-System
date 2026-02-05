@@ -1,6 +1,5 @@
 # app/security.py
 
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Callable
 
@@ -37,11 +36,13 @@ partner_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/partner/auth/login")
 
 def _bcrypt_safe_input(value: str) -> str:
     """
-    bcrypt has a HARD LIMIT of 72 BYTES for the input.
-    Anything longer will crash with: ValueError: password cannot be longer than 72 bytes
+      bcrypt hard limit: 72 BYTES
+    If a string longer than 72 bytes is passed to bcrypt,
+    passlib/bcrypt will raise:
+      ValueError: password cannot be longer than 72 bytes
 
-    This function prevents crashes by trimming to 72 bytes.
-    Note: bcrypt effectively ignores bytes after 72 anyway; trimming just makes it safe.
+    This function prevents crashes by trimming safely.
+    Note: bcrypt effectively ignores bytes after 72 anyway.
     """
     if value is None:
         return ""
@@ -65,15 +66,16 @@ def create_access_token(
     data: dict,
     expires_delta: Optional[timedelta] = None,
 ) -> str:
-
     to_encode = data.copy()
 
+    
     if "sub" not in to_encode:
         if "user_id" in to_encode:
             to_encode["sub"] = str(to_encode["user_id"])
         elif "partner_user_id" in to_encode:
             to_encode["sub"] = str(to_encode["partner_user_id"])
 
+   
     if "typ" not in to_encode:
         if "partner_user_id" in to_encode:
             to_encode["typ"] = "PARTNER"
@@ -109,6 +111,7 @@ def get_current_user(
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
 
+        
         if str(payload.get("typ", "")).upper() != "STAFF":
             raise credentials_exception
 
@@ -159,6 +162,7 @@ def get_current_partner_user(
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
 
+        
         if str(payload.get("typ", "")).upper() != "PARTNER":
             raise credentials_exception
 
