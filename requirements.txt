@@ -1,5 +1,5 @@
 fastapi
-uvicorn
+uvicorn[standard]
 gunicorn
 
 sqlalchemy
@@ -20,3 +20,4 @@ alembic
 python-multipart
 
 requests
+typing-extensions
