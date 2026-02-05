@@ -17,29 +17,48 @@ from .config import settings
 
 
 
-load_dotenv()
+if settings.ENV != "production":
+    load_dotenv()
 
 SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto",
+    bcrypt__rounds=12,
+)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
-
-
 partner_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/partner/auth/login")
 
 
+def _bcrypt_safe_input(value: str) -> str:
+    """
+    bcrypt has a HARD LIMIT of 72 BYTES for the input.
+    Anything longer will crash with: ValueError: password cannot be longer than 72 bytes
+
+    This function prevents crashes by trimming to 72 bytes.
+    Note: bcrypt effectively ignores bytes after 72 anyway; trimming just makes it safe.
+    """
+    if value is None:
+        return ""
+    b = value.encode("utf-8")
+    if len(b) <= 72:
+        return value
+    return b[:72].decode("utf-8", errors="ignore")
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    plain_password = _bcrypt_safe_input(plain_password)
     return pwd_context.verify(plain_password, hashed_password)
 
 
 def get_password_hash(password: str) -> str:
+    password = _bcrypt_safe_input(password)
     return pwd_context.hash(password)
-
 
 
 def create_access_token(
@@ -49,14 +68,12 @@ def create_access_token(
 
     to_encode = data.copy()
 
-    
     if "sub" not in to_encode:
         if "user_id" in to_encode:
             to_encode["sub"] = str(to_encode["user_id"])
         elif "partner_user_id" in to_encode:
             to_encode["sub"] = str(to_encode["partner_user_id"])
 
-    
     if "typ" not in to_encode:
         if "partner_user_id" in to_encode:
             to_encode["typ"] = "PARTNER"
@@ -71,14 +88,12 @@ def create_access_token(
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-
 def _role_value(role_obj) -> str:
     if role_obj is None:
         return ""
     if hasattr(role_obj, "value"):
         return str(role_obj.value).strip().upper()
     return str(role_obj).strip().upper()
-
 
 
 def get_current_user(
@@ -94,7 +109,6 @@ def get_current_user(
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
 
-        
         if str(payload.get("typ", "")).upper() != "STAFF":
             raise credentials_exception
 
@@ -117,7 +131,6 @@ def get_current_user(
     return user
 
 
-
 def require_roles(allowed_roles: List[schema.UserRoleEnum]) -> Callable:
     allowed = [_role_value(r) for r in allowed_roles]
 
@@ -133,7 +146,6 @@ def require_roles(allowed_roles: List[schema.UserRoleEnum]) -> Callable:
     return role_checker
 
 
-
 def get_current_partner_user(
     db: Session = Depends(get_db),
     token: str = Depends(partner_oauth2_scheme),
@@ -147,7 +159,6 @@ def get_current_partner_user(
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
 
-        
         if str(payload.get("typ", "")).upper() != "PARTNER":
             raise credentials_exception
 
