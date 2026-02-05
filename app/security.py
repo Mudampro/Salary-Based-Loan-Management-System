@@ -53,13 +53,17 @@ def _bcrypt_safe_input(value: str) -> str:
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    plain_password = _bcrypt_safe_input(plain_password)
+    if len((plain_password or "").encode("utf-8")) > 72:
+        return False
     return pwd_context.verify(plain_password, hashed_password)
 
 
 def get_password_hash(password: str) -> str:
-    password = _bcrypt_safe_input(password)
+    b = (password or "").encode("utf-8")
+    if len(b) > 72:
+        password = b[:72].decode("utf-8", errors="ignore")
     return pwd_context.hash(password)
+
 
 
 def create_access_token(
