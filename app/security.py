@@ -35,7 +35,7 @@ partner_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/partner/auth/login")
 
 def _normalize_secret(value: str) -> str:
     """
-    BEST FIX for your current situation:
+    ✅ BEST FIX for your current situation:
     Convert ANY length string into a fixed-length value before bcrypt.
 
     bcrypt has a hard limit of 72 BYTES. If you pass longer values, it crashes.
@@ -47,12 +47,12 @@ def _normalize_secret(value: str) -> str:
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    
+    # bcrypt will NEVER crash now
     return pwd_context.verify(_normalize_secret(plain_password), hashed_password)
 
 
 def get_password_hash(password: str) -> str:
-    
+    # bcrypt will NEVER crash now
     return pwd_context.hash(_normalize_secret(password))
 
 
