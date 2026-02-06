@@ -1,5 +1,6 @@
 # app/security.py
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Callable
 
@@ -15,14 +16,12 @@ from . import model, schema
 from .config import settings
 
 
-
 if settings.ENV != "production":
     load_dotenv()
 
 SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
-
 
 pwd_context = CryptContext(
     schemes=["bcrypt"],
@@ -34,36 +33,27 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 partner_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/partner/auth/login")
 
 
-def _bcrypt_safe_input(value: str) -> str:
+def _normalize_secret(value: str) -> str:
     """
-      bcrypt hard limit: 72 BYTES
-    If a string longer than 72 bytes is passed to bcrypt,
-    passlib/bcrypt will raise:
-      ValueError: password cannot be longer than 72 bytes
+    BEST FIX for your current situation:
+    Convert ANY length string into a fixed-length value before bcrypt.
 
-    This function prevents crashes by trimming safely.
-    Note: bcrypt effectively ignores bytes after 72 anyway.
+    bcrypt has a hard limit of 72 BYTES. If you pass longer values, it crashes.
+    This function makes the input safe by SHA-256 hashing it first.
     """
     if value is None:
-        return ""
-    b = value.encode("utf-8")
-    if len(b) <= 72:
-        return value
-    return b[:72].decode("utf-8", errors="ignore")
+        value = ""
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    if len((plain_password or "").encode("utf-8")) > 72:
-        return False
-    return pwd_context.verify(plain_password, hashed_password)
+    
+    return pwd_context.verify(_normalize_secret(plain_password), hashed_password)
 
 
 def get_password_hash(password: str) -> str:
-    b = (password or "").encode("utf-8")
-    if len(b) > 72:
-        password = b[:72].decode("utf-8", errors="ignore")
-    return pwd_context.hash(password)
-
+    
+    return pwd_context.hash(_normalize_secret(password))
 
 
 def create_access_token(
@@ -72,14 +62,12 @@ def create_access_token(
 ) -> str:
     to_encode = data.copy()
 
-    
     if "sub" not in to_encode:
         if "user_id" in to_encode:
             to_encode["sub"] = str(to_encode["user_id"])
         elif "partner_user_id" in to_encode:
             to_encode["sub"] = str(to_encode["partner_user_id"])
 
-   
     if "typ" not in to_encode:
         if "partner_user_id" in to_encode:
             to_encode["typ"] = "PARTNER"
@@ -115,7 +103,6 @@ def get_current_user(
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
 
-        
         if str(payload.get("typ", "")).upper() != "STAFF":
             raise credentials_exception
 
@@ -166,7 +153,6 @@ def get_current_partner_user(
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
 
-        
         if str(payload.get("typ", "")).upper() != "PARTNER":
             raise credentials_exception
 
