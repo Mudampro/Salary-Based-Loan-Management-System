@@ -11,8 +11,9 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from .. import model, schema
-from ..security import verify_password, get_password_hash, create_access_token, require_roles
-from ..config import settings  
+from ..security import verify_password, get_password_hash, create_access_token
+from ..security import require_roles
+from ..config import settings
 
 router = APIRouter(prefix="/partner", tags=["Partner Auth"])
 
@@ -24,6 +25,17 @@ def _hash_token(raw: str) -> str:
 def _get_partner_user_by_email(db: Session, email: str) -> Optional[model.PartnerUser]:
     return db.query(model.PartnerUser).filter(model.PartnerUser.email == email).first()
 
+
+def _get_latest_invite_by_hash(db: Session, token_hash: str) -> Optional[model.PartnerInviteToken]:
+    """
+    Always use the most recent invite row for a given hash (in case duplicates exist).
+    """
+    return (
+        db.query(model.PartnerInviteToken)
+        .filter(model.PartnerInviteToken.token_hash == token_hash)
+        .order_by(model.PartnerInviteToken.id.desc())
+        .first()
+    )
 
 
 @router.post(
@@ -55,7 +67,7 @@ def create_partner_invite(
                 status_code=400,
                 detail="Email already belongs to another organization.",
             )
-        
+
         if payload.full_name is not None:
             partner_user.full_name = payload.full_name
         if payload.role is not None:
@@ -82,7 +94,11 @@ def create_partner_invite(
     token_hash = _hash_token(raw_token)
 
     
-    expires_at = datetime.utcnow() + timedelta(hours=payload.expires_in_hours)
+    expires_in_hours = getattr(payload, "expires_in_hours", None)
+    if not isinstance(expires_in_hours, int) or expires_in_hours <= 0:
+        expires_in_hours = 24
+
+    expires_at = datetime.utcnow() + timedelta(hours=expires_in_hours)
 
     invite = model.PartnerInviteToken(
         partner_user_id=partner_user.id,
@@ -92,12 +108,12 @@ def create_partner_invite(
     )
     db.add(invite)
     db.commit()
+    db.refresh(invite)
 
     
     base = settings.frontend_base_url.rstrip("/")
     invite_link = f"{base}/#/partner/invite/{raw_token}"
 
-    
     return schema.PartnerInviteCreateOut(
         message="Invite created successfully.",
         invite_link=invite_link,
@@ -105,6 +121,38 @@ def create_partner_invite(
         partner_user=schema.PartnerUserOut.model_validate(partner_user),
     )
 
+
+@router.post("/invite/validate", response_model=schema.MessageOut)
+def validate_partner_invite(
+    payload: schema.PartnerInviteValidateIn,
+    db: Session = Depends(get_db),
+):
+    """
+    OPTIONAL but recommended: frontend can call this on page load to check token validity
+    WITHOUT consuming it.
+    """
+    token_hash = _hash_token(payload.token)
+    invite = _get_latest_invite_by_hash(db, token_hash)
+
+    if not invite:
+        raise HTTPException(status_code=400, detail="Invalid invite token.")
+
+    if invite.used_at is not None:
+        raise HTTPException(status_code=400, detail="Invite token already used.")
+
+    if invite.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Invite token expired.")
+
+    
+    partner_user = (
+        db.query(model.PartnerUser)
+        .filter(model.PartnerUser.id == invite.partner_user_id)
+        .first()
+    )
+    if not partner_user:
+        raise HTTPException(status_code=400, detail="Partner user not found.")
+
+    return schema.MessageOut(message="Invite token is valid.")
 
 
 @router.post("/invite/complete", response_model=schema.MessageOut)
@@ -114,12 +162,7 @@ def complete_partner_invite(
 ):
     token_hash = _hash_token(payload.token)
 
-    invite = (
-        db.query(model.PartnerInviteToken)
-        .filter(model.PartnerInviteToken.token_hash == token_hash)
-        .order_by(model.PartnerInviteToken.id.desc())
-        .first()
-    )
+    invite = _get_latest_invite_by_hash(db, token_hash)
     if not invite:
         raise HTTPException(status_code=400, detail="Invalid invite token.")
 
@@ -137,17 +180,28 @@ def complete_partner_invite(
     if not partner_user:
         raise HTTPException(status_code=400, detail="Partner user not found.")
 
-    partner_user.hashed_password = get_password_hash(payload.password)
-    partner_user.is_active = True
+    
+    if payload.full_name is not None:
+        partner_user.full_name = payload.full_name
 
-    invite.used_at = datetime.utcnow()
+    try:
+        partner_user.hashed_password = get_password_hash(payload.password)
+        partner_user.is_active = True
+        invite.used_at = datetime.utcnow()
 
-    db.add(partner_user)
-    db.add(invite)
-    db.commit()
+        db.add(partner_user)
+        db.add(invite)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to complete invite. Please try again.",
+        )
 
-    return schema.MessageOut(message="Password set successfully. You can now login.")
-
+    return schema.MessageOut(
+        message="Password set successfully. You can now login."
+    )
 
 
 @router.post("/auth/login", response_model=schema.PartnerTokenWithUser)
@@ -174,7 +228,6 @@ def partner_login(
             detail="Incorrect email or password",
         )
 
-    
     access_token = create_access_token(
         data={
             "partner_user_id": user.id,
