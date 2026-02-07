@@ -526,12 +526,17 @@ class PartnerInviteCreateOut(BaseModel):
         orm_mode = True
         use_enum_values = True
 
+class PartnerInviteValidateIn(BaseModel):
+    token: str
+
 
 class PartnerInviteCompleteIn(BaseModel):
     token: str
     password: str = Field(min_length=8)
     full_name: Optional[str] = None
 
+class MessageOut(BaseModel):
+    message: str
 
 class PartnerLoginRequest(BaseModel):
     email: EmailStr
