@@ -4,7 +4,7 @@ import axios from "axios";
 import { getPartnerToken } from "../utils/partnerStorage";
 
 const partnerAxiosClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000",
+  baseURL: import.meta.env.VITE_API_BASE_URL || "https://nunmfb.onrender.com",
 });
 
 partnerAxiosClient.interceptors.request.use((config) => {
