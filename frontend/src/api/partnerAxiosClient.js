@@ -7,9 +7,15 @@ const partnerAxiosClient = axios.create({
 
 partnerAxiosClient.interceptors.request.use((config) => {
   const token = getPartnerToken();
-  if (token) {
+
+  
+  const isInviteEndpoint =
+    config.url?.includes("/partner/invite");
+
+  if (token && !isInviteEndpoint) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+
   return config;
 });
 
