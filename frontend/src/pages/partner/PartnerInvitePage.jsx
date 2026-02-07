@@ -8,8 +8,11 @@ export default function PartnerInvitePage() {
   const { token } = useParams();
   const navigate = useNavigate();
 
-  // normalize token (no whitespace)
-  const inviteToken = useMemo(() => (token ? String(token).trim() : ""), [token]);
+  
+  const inviteToken = useMemo(() => {
+    const t = token ? String(token).trim() : "";
+    return t.endsWith("/") ? t.slice(0, -1) : t;
+  }, [token]);
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -19,7 +22,6 @@ export default function PartnerInvitePage() {
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
-  // ✅ validate on load (does NOT consume token)
   useEffect(() => {
     let mounted = true;
 
@@ -40,10 +42,24 @@ export default function PartnerInvitePage() {
         if (mounted) setError("");
       } catch (err) {
         if (!mounted) return;
-        const msg =
-          err?.response?.data?.detail ||
-          "Invite link is invalid or expired.";
-        setError(msg);
+
+        
+        const status = err?.response?.status;
+        const data = err?.response?.data;
+        const url = err?.config?.url;
+
+        console.log("INVITE TOKEN:", inviteToken);
+        console.log("VALIDATE URL:", url);
+        console.log("VALIDATE STATUS:", status);
+        console.log("VALIDATE DATA:", data);
+
+        
+        const detail =
+          data?.detail ||
+          (typeof data === "string" ? data.slice(0, 200) : null) ||
+          `Validate failed${status ? ` (${status})` : ""}. Check Network tab.`;
+
+        setError(detail);
       } finally {
         if (mounted) setValidating(false);
       }
@@ -75,27 +91,32 @@ export default function PartnerInvitePage() {
 
     setLoading(true);
     try {
-      const res = await completePartnerInvite({
-        token: inviteToken,
-        password,
-      });
-
+      const res = await completePartnerInvite({ token: inviteToken, password });
       setSuccessMsg(res?.message || "Password set successfully. Redirecting...");
       setPassword("");
       setConfirm("");
-
       setTimeout(() => navigate("/partner/login"), 800);
     } catch (err) {
-      const msg =
-        err?.response?.data?.detail ||
-        "Failed to complete invite. The link may be expired or already used.";
-      setError(msg);
+      const status = err?.response?.status;
+      const data = err?.response?.data;
+      const url = err?.config?.url;
+
+      console.log("COMPLETE URL:", url);
+      console.log("COMPLETE STATUS:", status);
+      console.log("COMPLETE DATA:", data);
+
+      const detail =
+        data?.detail ||
+        (typeof data === "string" ? data.slice(0, 200) : null) ||
+        `Complete failed${status ? ` (${status})` : ""}. Check Network tab.`;
+
+      setError(detail);
     } finally {
       setLoading(false);
     }
   };
 
-  const disabled = loading || !!successMsg || validating || !!error || !inviteToken;
+  const disabled = loading || !!successMsg || validating || !inviteToken;
 
   return (
     <div
@@ -108,10 +129,7 @@ export default function PartnerInvitePage() {
         padding: "2rem 1rem",
       }}
     >
-      <div
-        className="card"
-        style={{ width: "100%", maxWidth: 520, padding: "1.75rem 1.5rem" }}
-      >
+      <div className="card" style={{ width: "100%", maxWidth: 520, padding: "1.75rem 1.5rem" }}>
         <h1 style={{ fontSize: "1.3rem", fontWeight: 700, marginBottom: "0.25rem" }}>
           Complete Organization Invite
         </h1>
@@ -122,21 +140,6 @@ export default function PartnerInvitePage() {
         {validating && (
           <div style={{ marginTop: "0.75rem", color: "#6b7280", fontSize: "0.92rem" }}>
             Checking invite…
-          </div>
-        )}
-
-        {!validating && !inviteToken && (
-          <div
-            style={{
-              marginTop: "0.75rem",
-              padding: "0.6rem 0.75rem",
-              borderRadius: "0.5rem",
-              background: "#fef2f2",
-              color: "#b91c1c",
-              fontSize: "0.9rem",
-            }}
-          >
-            Invite token is missing. Please use the invite link provided by the bank.
           </div>
         )}
 
@@ -152,21 +155,6 @@ export default function PartnerInvitePage() {
             }}
           >
             {error}
-          </div>
-        )}
-
-        {successMsg && (
-          <div
-            style={{
-              marginTop: "0.75rem",
-              padding: "0.6rem 0.75rem",
-              borderRadius: "0.5rem",
-              background: "#ecfdf3",
-              color: "#166534",
-              fontSize: "0.9rem",
-            }}
-          >
-            {successMsg}
           </div>
         )}
 
