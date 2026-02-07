@@ -8,14 +8,11 @@ export async function partnerLogin(email, password) {
   body.append("password", password);
 
   const res = await partnerAxiosClient.post("/partner/auth/login", body, {
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
   });
 
   return res.data;
 }
-
 
 export async function validatePartnerInvite(token) {
   const res = await partnerAxiosClient.post("/partner/invite/validate", { token });

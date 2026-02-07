@@ -1,3 +1,5 @@
+// frontend/src/api/partnerAxiosClient.js
+
 import axios from "axios";
 import { getPartnerToken } from "../utils/partnerStorage";
 
@@ -9,8 +11,10 @@ partnerAxiosClient.interceptors.request.use((config) => {
   const token = getPartnerToken();
 
   
+  const url = config.url || "";
   const isInviteEndpoint =
-    config.url?.includes("/partner/invite");
+    url.includes("/partner/invite/validate") ||
+    url.includes("/partner/invite/complete");
 
   if (token && !isInviteEndpoint) {
     config.headers.Authorization = `Bearer ${token}`;
