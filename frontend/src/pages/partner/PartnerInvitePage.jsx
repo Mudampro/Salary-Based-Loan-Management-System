@@ -8,7 +8,6 @@ export default function PartnerInvitePage() {
   const { token } = useParams();
   const navigate = useNavigate();
 
-  
   const inviteToken = useMemo(() => {
     const t = token ? String(token).trim() : "";
     return t.endsWith("/") ? t.slice(0, -1) : t;
@@ -22,12 +21,16 @@ export default function PartnerInvitePage() {
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
+  const [redirectIn, setRedirectIn] = useState(0);
+
+  
   useEffect(() => {
     let mounted = true;
 
     async function run() {
       setValidating(true);
       setError("");
+      setSuccessMsg("");
 
       if (!inviteToken) {
         if (mounted) {
@@ -43,17 +46,9 @@ export default function PartnerInvitePage() {
       } catch (err) {
         if (!mounted) return;
 
-        
         const status = err?.response?.status;
         const data = err?.response?.data;
-        const url = err?.config?.url;
 
-        console.log("INVITE TOKEN:", inviteToken);
-        console.log("VALIDATE URL:", url);
-        console.log("VALIDATE STATUS:", status);
-        console.log("VALIDATE DATA:", data);
-
-        
         const detail =
           data?.detail ||
           (typeof data === "string" ? data.slice(0, 200) : null) ||
@@ -70,6 +65,25 @@ export default function PartnerInvitePage() {
       mounted = false;
     };
   }, [inviteToken]);
+
+  
+  useEffect(() => {
+    if (!successMsg) return;
+
+    setRedirectIn(3);
+    const tick = setInterval(() => {
+      setRedirectIn((n) => (n > 1 ? n - 1 : 0));
+    }, 1000);
+
+    const navTimer = setTimeout(() => {
+      navigate("/partner/login");
+    }, 3000);
+
+    return () => {
+      clearInterval(tick);
+      clearTimeout(navTimer);
+    };
+  }, [successMsg, navigate]);
 
   const validateForm = () => {
     if (!inviteToken) return "Invite token is missing.";
@@ -92,18 +106,16 @@ export default function PartnerInvitePage() {
     setLoading(true);
     try {
       const res = await completePartnerInvite({ token: inviteToken, password });
-      setSuccessMsg(res?.message || "Password set successfully. Redirecting...");
+
+      
+      setSuccessMsg(res?.message || "Password set successfully. Redirecting to login...");
+
+      
       setPassword("");
       setConfirm("");
-      setTimeout(() => navigate("/partner/login"), 800);
     } catch (err) {
       const status = err?.response?.status;
       const data = err?.response?.data;
-      const url = err?.config?.url;
-
-      console.log("COMPLETE URL:", url);
-      console.log("COMPLETE STATUS:", status);
-      console.log("COMPLETE DATA:", data);
 
       const detail =
         data?.detail ||
@@ -155,6 +167,29 @@ export default function PartnerInvitePage() {
             }}
           >
             {error}
+          </div>
+        )}
+
+        {successMsg && (
+          <div
+            style={{
+              marginTop: "0.75rem",
+              padding: "0.75rem 0.9rem",
+              borderRadius: "0.6rem",
+              background: "#ecfdf3",
+              color: "#166534",
+              fontSize: "0.95rem",
+              border: "1px solid #bbf7d0",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: 700 }}>
+              <span aria-hidden="true">✅</span>
+              <span>Success!</span>
+            </div>
+            <div style={{ marginTop: "0.35rem" }}>
+              {successMsg}
+              {redirectIn > 0 ? ` Redirecting in ${redirectIn}s…` : ""}
+            </div>
           </div>
         )}
 
