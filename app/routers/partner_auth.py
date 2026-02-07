@@ -31,15 +31,13 @@ def _get_partner_user_by_email(db: Session, email: str) -> Optional[model.Partne
     return db.query(model.PartnerUser).filter(model.PartnerUser.email == email).first()
 
 
-def _get_latest_invite_by_hash(
-    db: Session, token_hash: str
-) -> Optional[model.PartnerInviteToken]:
-    """
-    Always use the most recent invite row for a given hash.
-    """
+def _get_latest_invite_by_token(db: Session, raw_token: str) -> Optional[model.PartnerInviteToken]:
+    raw_token = (raw_token or "").strip()
+    token_hash = _hash_token(raw_token)
+
     return (
         db.query(model.PartnerInviteToken)
-        .filter(model.PartnerInviteToken.token_hash == token_hash)
+        .filter(model.PartnerInviteToken.token_hash.in_([token_hash, raw_token]))
         .order_by(model.PartnerInviteToken.id.desc())
         .first()
     )
@@ -106,7 +104,7 @@ def create_partner_invite(
 
     invite = model.PartnerInviteToken(
         partner_user_id=partner_user.id,
-        token_hash=token_hash,
+        token_hash=token_hash,  
         expires_at=expires_at,
         used_at=None,
     )
@@ -130,10 +128,9 @@ def validate_partner_invite(
     payload: schema.PartnerInviteValidateIn,
     db: Session = Depends(get_db),
 ):
-    token_hash = _hash_token(payload.token)
-    invite = _get_latest_invite_by_hash(db, token_hash)
+    raw_token = (payload.token or "").strip()
+    invite = _get_latest_invite_by_token(db, raw_token)
 
-    
     if not invite:
         raise HTTPException(status_code=400, detail="Invalid invite token.")
 
@@ -152,6 +149,13 @@ def validate_partner_invite(
     if not partner_user:
         raise HTTPException(status_code=400, detail="Partner user not found.")
 
+    
+    correct_hash = _hash_token(raw_token)
+    if invite.token_hash != correct_hash:
+        invite.token_hash = correct_hash
+        db.add(invite)
+        db.commit()
+
     return schema.MessageOut(message="Invite token is valid.")
 
 
@@ -160,8 +164,8 @@ def complete_partner_invite(
     payload: schema.PartnerInviteCompleteIn,
     db: Session = Depends(get_db),
 ):
-    token_hash = _hash_token(payload.token)
-    invite = _get_latest_invite_by_hash(db, token_hash)
+    raw_token = (payload.token or "").strip()
+    invite = _get_latest_invite_by_token(db, raw_token)
 
     if not invite:
         raise HTTPException(status_code=400, detail="Invalid invite token.")
@@ -185,16 +189,25 @@ def complete_partner_invite(
         partner_user.full_name = payload.full_name
 
     try:
+        correct_hash = _hash_token(raw_token)
+        if invite.token_hash != correct_hash:
+            invite.token_hash = correct_hash
+
         partner_user.hashed_password = get_password_hash(payload.password)
         partner_user.is_active = True
-        invite.used_at = now  
+
+        
+        invite.used_at = now
 
         db.add(partner_user)
         db.add(invite)
         db.commit()
     except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to complete invite. Please try again.")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to complete invite. Please try again.",
+        )
 
     return schema.MessageOut(message="Password set successfully. You can now login.")
 
@@ -206,7 +219,10 @@ def partner_login(
 ):
     user = _get_partner_user_by_email(db, form_data.username)
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+        )
 
     if not user.is_active or not user.hashed_password:
         raise HTTPException(
@@ -215,7 +231,10 @@ def partner_login(
         )
 
     if not verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+        )
 
     access_token = create_access_token(
         data={
